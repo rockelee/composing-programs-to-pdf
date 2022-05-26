@@ -191,3 +191,5 @@ def main() -> None:
     make_book(book_path=output_path)
     print(f"[+] A pdf version of 'Composing Programs' was saved in: {output_path}")
     
+if __name__ == "__main__":
+    main()
