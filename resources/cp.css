@@ -138,8 +138,6 @@ float:left
 float:right
 }
 
-.container {
-}
 
 .wrap {
 width:960px;
@@ -427,8 +425,8 @@ text-align:center
 }
 
 .inner-content {
-float:right;
-width:720px
+display: inline-block;
+float:none;
 }
 
 .nosidebar .inner-content {
@@ -451,14 +449,25 @@ content:'.'
 }
 
 .CodeMirror,div.CodeMirror-gutters,div.highlight {
-border:none
+border:none;
+page-break-inside: avoid;
+}
+
+.img {
+  page-break-inside: avoid;
 }
 
 small code,li code,p code {
 color:#555;
 background-color:rgba(0,0,0,0.04);
+text-align: justify;
+text-justify: inter-word;
 padding:1px 3px
 }
+
+.p {
+}
+
 
 .cm-s-default span.cm-string-2 {
 color:inherit

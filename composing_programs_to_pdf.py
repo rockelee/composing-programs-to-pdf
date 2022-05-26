@@ -4,7 +4,7 @@ import xml.etree.ElementTree as ET
 import re
 import codecs
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, element
 import os
 import sys
 import tempfile
@@ -19,7 +19,12 @@ PDFKIT_OPTS = options = {
     "user-style-sheet": "./resources/cp.css",
     "dpi": "600",
     "encoding": "UTF-8",
-    "javascript-delay": "9000"
+    "javascript-delay": "9000",
+    "margin-top": "0in",
+    "margin-right": "0in",
+    "margin-bottom": "0in",
+    "margin-left": "0in",
+    "no-outline": None,
 }
 
 
@@ -88,19 +93,52 @@ def fetch_chapter_urls(**kwargs) -> list:
     return _sort_chapter(relevant_chapters)
 
 
+def _replace_img_paths(soup: BeautifulSoup, webelement: element.Tag) -> element.Tag:
+    """add the url to the relative paths in src values of img tags"""
+    for img_tag in webelement.find_all("img"):
+        if img_tag.has_attr("src"):
+            new_img = soup.new_tag(
+                "img",
+                src=f'https://composingprograms.com/img/{img_tag["src"].split("/")[-1]}',
+            )
+            img_tag.replace_with(new_img)
+    return webelement
+
+
+def _replace_href_paths(soup: BeautifulSoup, webelement: element.Tag) -> element.Tag:
+    """add the url to the relative paths in href values"""
+    for a_tag in webelement.find_all("a"):
+        if a_tag.has_attr("href"):
+            if not a_tag.has_attr("class"):
+                new_a = soup.new_tag(
+                    "a",
+                    href=f'https://composingprograms.com{a_tag["href"].split("/")[-1]}',
+                )
+                a_tag.replace_with(new_a)
+    return webelement
+
+
+def fix_relative_paths(soup: BeautifulSoup, webelement: element.Tag) -> element.Tag:
+    """Wrapper for fixing issues with relative paths in anchor and image tags"""
+    webelement = _replace_img_paths(soup=soup, webelement=webelement)
+    webelement = _replace_href_paths(soup=soup, webelement=webelement)
+    return webelement
+
+
 def scrape_chapter_content(url: str) -> str:
     """Scrape the chapter's inner content"""
     resp = requests.get(url)
     if resp.ok:
         soup = BeautifulSoup(resp.content.decode("utf-8", "ignore"), "html.parser")
-        inner_content = str(soup.select(".inner-content")[0])
+        inner_content = soup.select(".inner-content")[0]
+        inner_content = fix_relative_paths(soup=soup, webelement=inner_content)
         with codecs.open("resources/header.html") as f:
             header_content = f.read()
         footer = """
         </body>
         </html>
         """
-        return "\n".join([header_content, inner_content, footer])
+        return "\n".join([header_content, str(inner_content), footer])
 
 
 def chapter_to_pdf(output_dir: str, url: str) -> str:
@@ -158,7 +196,7 @@ def make_pdf(tex_path: str, temp_output_dir: str) -> str:
 
 
 def merge_chapters(input_files: list, book_path: str) -> None:
-    """ Wrapper function for merging all the chapters"""
+    """Wrapper function for merging all the chapters"""
     tex_dir = tempfile.mkdtemp(prefix="interm-tex-dir-book-")
     # prepare the merge tex
     tex_path = make_tex(pdf_paths_list=input_files, tex_dir=tex_dir)
@@ -172,7 +210,7 @@ def merge_chapters(input_files: list, book_path: str) -> None:
 
 
 def make_book(book_path: str = "test") -> None:
-    """ create the book """
+    """create the book"""
     temp_dir = tempfile.mkdtemp(prefix="interm-dir-book-")
     # filename container
     filename_container = []
@@ -188,12 +226,13 @@ def make_book(book_path: str = "test") -> None:
     # delete tempdir
     shutil.rmtree(temp_dir)
 
+
 def main() -> None:
     args = parse_args()
     output_path = args.output_path
     make_book(book_path=output_path)
     print(f"[+] A pdf version of 'Composing Programs' was saved in: {output_path}")
-    
+
+
 if __name__ == "__main__":
     main()
-    

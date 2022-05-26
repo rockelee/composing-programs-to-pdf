@@ -7,5 +7,5 @@ python3 composing_programs_to_pdf.py -o "./sample"
 ```
 
 # TO-DO:
-- [ ] Fix the "pdfkit not including images" bug
-- [ ] Center the text
+- [ X ] Fix the img and href relative path issues
+- [ X ] Center tand justify the text
