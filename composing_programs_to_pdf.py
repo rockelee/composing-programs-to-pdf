@@ -19,7 +19,7 @@ PDFKIT_OPTS = options = {
     "user-style-sheet": "./resources/cp.css",
     "dpi": "600",
     "encoding": "UTF-8",
-    "javascript-delay": "9000",
+    "javascript-delay": "9000"
 }
 
 
@@ -114,6 +114,7 @@ def chapter_to_pdf(output_dir: str, url: str) -> str:
 
 
 def make_cover(output_dir: str) -> str:
+    """generate a pdf with the book's cover"""
     filename = os.path.join(output_dir, "cover.pdf")
     pdfkit.from_file(
         "resources/cover.html",
@@ -125,7 +126,7 @@ def make_cover(output_dir: str) -> str:
 
 
 def _make_tex(pdf_paths_list: list) -> str:
-    """Make the tex file"""
+    """Make the tex file containing all the pdf files to merge"""
     to_insert = "\n".join(["\includepdf[pages=-]{" + _ + "}" for _ in pdf_paths_list])
     # insert them in the tex file
     prefix = """
@@ -140,7 +141,7 @@ def _make_tex(pdf_paths_list: list) -> str:
 
 
 def make_tex(tex_dir: str, **kwargs) -> str:
-    """Make the tex file and store in temp dir"""
+    """Make the tex file containing all the pdf files to merge and store in temp dir"""
     tex = _make_tex(**kwargs)
     texfile = os.path.join(tex_dir, "to_merge.tex")
     with open(texfile, "w+") as tf:
@@ -149,7 +150,7 @@ def make_tex(tex_dir: str, **kwargs) -> str:
 
 
 def make_pdf(tex_path: str, temp_output_dir: str) -> str:
-    """Make a pdf doc with a tex file"""
+    """complie the tex file"""
     check_output(
         ["pdflatex", f"-output-directory={temp_output_dir}", tex_path], timeout=120
     )
@@ -157,6 +158,7 @@ def make_pdf(tex_path: str, temp_output_dir: str) -> str:
 
 
 def merge_chapters(input_files: list, book_path: str) -> None:
+    """ Wrapper function for merging all the chapters"""
     tex_dir = tempfile.mkdtemp(prefix="interm-tex-dir-book-")
     # prepare the merge tex
     tex_path = make_tex(pdf_paths_list=input_files, tex_dir=tex_dir)
@@ -170,6 +172,7 @@ def merge_chapters(input_files: list, book_path: str) -> None:
 
 
 def make_book(book_path: str = "test") -> None:
+    """ create the book """
     temp_dir = tempfile.mkdtemp(prefix="interm-dir-book-")
     # filename container
     filename_container = []
