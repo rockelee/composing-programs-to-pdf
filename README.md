@@ -5,3 +5,7 @@ Python script for converting the online book "Composing Programs" (https://compo
 ```bash
 python3 composing_programs_to_pdf.py -o "~/sample"
 ```
+
+# TO-DO:
+- [ ] Fix the "pdfkit not including images" bug
+- [ ] Center the text
