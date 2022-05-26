@@ -28,7 +28,7 @@ def parse_args() -> argparse.Namespace:
 
     ## parse CLI args
     parser = argparse.ArgumentParser(
-        prog="composing_programs2pdf.py",
+        prog="composing_programs_to_pdf.py",
         description="Convert the online book 'Composing Programs' into a pdf file. See: https://composingprograms.com/",
     )
 
