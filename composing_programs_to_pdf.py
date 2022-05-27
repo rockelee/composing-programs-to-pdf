@@ -7,24 +7,31 @@ import requests
 from bs4 import BeautifulSoup, element
 import os
 import sys
+import time
 import tempfile
+from typing import Optional
 import shutil
 from subprocess import check_output
 import argparse
+from selenium import webdriver
+from numbering2pdf import add_numbering_to_pdf
+from PyPDF2 import PdfFileMerger, PdfFileReader
+import contextlib
 
 PATH_TO_SITEMAP = "resources/composing_programs_sitemap.xml"
-
+FIREFOX_BINARY = "/usr/bin/firefox"
 PDFKIT_OPTS = options = {
     "page-size": "letter",
     "user-style-sheet": "./resources/cp.css",
     "dpi": "600",
     "encoding": "UTF-8",
-    "javascript-delay": "9000",
-    "margin-top": "0in",
-    "margin-right": "0in",
-    "margin-bottom": "0in",
-    "margin-left": "0in",
+    # "javascript-delay": "25000", # needs to be extra long for mathjax to render
+    "margin-top": "0.75in",
+    "margin-right": "0.75in",
+    "margin-bottom": "0.75in",
+    "margin-left": "0.75in",
     "no-outline": None,
+    "disable-smart-shrinking": "",
 }
 
 
@@ -109,120 +116,161 @@ def _replace_href_paths(soup: BeautifulSoup, webelement: element.Tag) -> element
     """add the url to the relative paths in href values"""
     for a_tag in webelement.find_all("a"):
         if a_tag.has_attr("href"):
-            if not a_tag.has_attr("class"):
+            new_a = None
+            if "../" in a_tag["href"]:
                 new_a = soup.new_tag(
                     "a",
-                    href=f'https://composingprograms.com{a_tag["href"].split("/")[-1]}',
+                    href=f'https://composingprograms.com/{a_tag["href"].split("/")[-1]}',
                 )
-                a_tag.replace_with(new_a)
+                if a_tag.string:
+                    new_a.string = a_tag.string
+        elif a_tag.has_attr("onclick"):
+            if "youtube" in a_tag["onclick"]:
+                youtube_video_raw = re.search(
+                    "http[s]?:\/\/(www\.)?youtube(.*)(?='\);)", a_tag["onclick"]
+                ).group(0)
+                youtube_video = "https://www.youtube.com/watch?v={}".format(
+                    re.search("(?<=/embed/).*?(?=\?)", youtube_video_raw).group(0)
+                )
+                new_a = soup.new_tag(
+                    "a",
+                    href=youtube_video,
+                )
+
+                if a_tag.string:
+                    new_a.string = "Link for the video lecture"
+        if new_a:
+            a_tag.replace_with(new_a)
     return webelement
 
 
-def fix_relative_paths(soup: BeautifulSoup, webelement: element.Tag) -> element.Tag:
+def fix_links(soup: BeautifulSoup, webelement: element.Tag) -> element.Tag:
     """Wrapper for fixing issues with relative paths in anchor and image tags"""
     webelement = _replace_img_paths(soup=soup, webelement=webelement)
     webelement = _replace_href_paths(soup=soup, webelement=webelement)
     return webelement
 
 
-def scrape_chapter_content(url: str) -> str:
-    """Scrape the chapter's inner content"""
+def _create_webdriver() -> webdriver.Firefox:
+    """create a firefox webdriver"""
+    options = webdriver.FirefoxOptions()
+    options.headless = True
+    options.add_argument("-headless")
+    options.add_argument("--start-maximized")
+    options.add_argument("--disable-gpu")
+    return webdriver.Firefox(options=options, service_log_path=os.devnull)
+
+
+def _destroy_webdriver(driver: webdriver.Firefox) -> None:
+    """destroy a firefox webdriver"""
+    driver.quit()
+
+
+def _requests_get_source_code(url: str) -> str:
+    """scrape a page's source code using requests"""
     resp = requests.get(url)
-    if resp.ok:
-        soup = BeautifulSoup(resp.content.decode("utf-8", "ignore"), "html.parser")
-        inner_content = soup.select(".inner-content")[0]
-        inner_content = fix_relative_paths(soup=soup, webelement=inner_content)
-        with codecs.open("resources/header.html") as f:
-            header_content = f.read()
-        footer = """
-        </body>
-        </html>
-        """
-        return "\n".join([header_content, str(inner_content), footer])
+    resp.raise_for_status()
+    return resp.content.decode("utf-8", "ignore")
 
 
-def chapter_to_pdf(output_dir: str, url: str) -> str:
+def _selenium_get_source_code(
+    url: str, driver: Optional[webdriver.Firefox] = None, sleep: int = 10
+) -> str:
+    current_driver = driver or _create_webdriver()
+    current_driver.get(url)
+    time.sleep(sleep)
+    page_source = current_driver.page_source
+    if current_driver != driver:
+        _destroy_webdriver(current_driver)
+    return page_source
+
+
+def scrape_chapter_content(
+    url: str, use_selenium: bool = True, driver: Optional[webdriver.Firefox] = None
+) -> str:
+    """Scrape the chapter's inner content"""
+    if not use_selenium:
+        page_source = _requests_get_source_code(url=url)
+    else:
+        page_source = _selenium_get_source_code(url=url, driver=driver)
+    soup = BeautifulSoup(page_source, "html.parser")
+    inner_content = soup.select(".inner-content")[0]
+    inner_content = fix_links(soup=soup, webelement=inner_content)
+    with codecs.open("resources/header.html") as f:
+        header_content = f.read()
+    footer = """
+    </body>
+    </html>
+    """
+    return "\n".join([header_content, str(inner_content), footer])
+
+
+def chapter_to_pdf(
+    output_dir: str, url: str, driver: Optional[webdriver.Firefox] = None
+) -> None:
     """Convert the html of a chapter to a pdf"""
-    chapter_content = scrape_chapter_content(url)
-    filename = os.path.join(output_dir, f"{_fetch_chapter_number(url)}.pdf")
+    use_selenium = True if driver else False
+    chapter_content = scrape_chapter_content(
+        url, driver=driver, use_selenium=use_selenium
+    )
+    filename = os.path.join(output_dir, f"entry_{_fetch_chapter_number(url)}.pdf")
     pdfkit.from_string(
         chapter_content, filename, options=PDFKIT_OPTS, css="resources/cp.css"
     )
-    return filename
 
 
-def make_cover(output_dir: str) -> str:
+def make_cover(output_dir: str) -> None:
     """generate a pdf with the book's cover"""
-    filename = os.path.join(output_dir, "cover.pdf")
+    filename = os.path.join(output_dir, "entry.pdf")
     pdfkit.from_file(
         "resources/cover.html",
         filename,
         options=PDFKIT_OPTS,
         css="resources/cover_style.css",
     )
-    return filename
 
 
-def _make_tex(pdf_paths_list: list) -> str:
-    """Make the tex file containing all the pdf files to merge"""
-    to_insert = "\n".join(["\includepdf[pages=-]{" + _ + "}" for _ in pdf_paths_list])
-    # insert them in the tex file
-    prefix = """
-    \\documentclass{article}
-    \\usepackage{pdfpages}
-    \\begin{document}
-    """
-    suffix = """
-    \\end{document}
-    """
-    return "\n".join([prefix, to_insert, suffix])
+def merge_chapters(input_dir: list, book_path: str) -> None:
+    """Merge all the chapters and number the pages"""
+    # book file
+    book_file = os.path.join(book_path, "composing-programs.pdf")
+    # list and order all files by creation date
+    all_files = [_.path for _ in os.scandir(input_dir)]
+    all_files.sort(key=lambda x: os.path.getctime(x))
+    ## loop across each file, read, and then merge
+    # Call the PdfFileMerger
+    mergedObject = PdfFileMerger()
+    for cur_file in all_files:
+        mergedObject.append(PdfFileReader(cur_file, "rb"))
+    # Write all the files into one pdf
+    mergedObject.write(book_file)
+    # finally we number the pages and suppress the very verbose output of add_numbering_to_pdf()
+    with contextlib.redirect_stdout(open(os.devnull, "w")):
+        add_numbering_to_pdf(
+            pdf_file=book_file,
+            new_pdf_file_path=book_file,
+            position="right",
+            start_page=1,
+            end_page=None,
+            start_index=1,
+            size=10,
+            font="Helvetica",
+        )
 
-
-def make_tex(tex_dir: str, **kwargs) -> str:
-    """Make the tex file containing all the pdf files to merge and store in temp dir"""
-    tex = _make_tex(**kwargs)
-    texfile = os.path.join(tex_dir, "to_merge.tex")
-    with open(texfile, "w+") as tf:
-        tf.write(tex)
-    return texfile
-
-
-def make_pdf(tex_path: str, temp_output_dir: str) -> str:
-    """complie the tex file"""
-    check_output(
-        ["pdflatex", f"-output-directory={temp_output_dir}", tex_path], timeout=120
-    )
-    return os.path.join(temp_output_dir, "to_merge.pdf")
-
-
-def merge_chapters(input_files: list, book_path: str) -> None:
-    """Wrapper function for merging all the chapters"""
-    tex_dir = tempfile.mkdtemp(prefix="interm-tex-dir-book-")
-    # prepare the merge tex
-    tex_path = make_tex(pdf_paths_list=input_files, tex_dir=tex_dir)
-    # make the pdf
-    output_file = os.path.join(book_path, "composing-programs.pdf")
-    pdf_path = make_pdf(tex_path=tex_path, temp_output_dir=tex_dir)
-    # copy
-    shutil.copy(src=pdf_path, dst=output_file)
-    # delete tempdir
-    shutil.rmtree(tex_dir)
-
-
-def make_book(book_path: str = "test") -> None:
+def make_book(
+    book_path: str = "test", driver: Optional[webdriver.Firefox] = None
+) -> None:
     """create the book"""
     temp_dir = tempfile.mkdtemp(prefix="interm-dir-book-")
-    # filename container
-    filename_container = []
     # make the cover page
-    filename_container.append(make_cover(output_dir=temp_dir))
+    make_cover(output_dir=temp_dir)
     # chapter urls
     chapter_urls = fetch_chapter_urls()
     # for each, conert to pdf
     for chapter_url in chapter_urls:
-        filename_container.append(chapter_to_pdf(output_dir=temp_dir, url=chapter_url))
+        chapter_to_pdf(output_dir=temp_dir, url=chapter_url, driver=driver)
     # merge into one book
-    merge_chapters(input_files=filename_container, book_path=book_path)
+    merge_chapters(input_dir=temp_dir, book_path=book_path)
     # delete tempdir
     shutil.rmtree(temp_dir)
 
@@ -230,8 +278,10 @@ def make_book(book_path: str = "test") -> None:
 def main() -> None:
     args = parse_args()
     output_path = args.output_path
-    make_book(book_path=output_path)
+    my_webdriver = _create_webdriver()
+    make_book(book_path=output_path, driver=my_webdriver)
     print(f"[+] A pdf version of 'Composing Programs' was saved in: {output_path}")
+    _destroy_webdriver(my_webdriver)
 
 
 if __name__ == "__main__":

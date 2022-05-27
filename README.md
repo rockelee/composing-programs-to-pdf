@@ -9,4 +9,5 @@ python3 composing_programs_to_pdf.py -o "./sample"
 # TO-DO:
 - [X] Fix the img and href relative path issues
 - [X] Center tand justify the text
-- [ ] Fix latex expressions not being rendered
+- [X] Fix latex (mathjax) expressions not being rendered
+- [ ] Fix mid-sentence page breaks
