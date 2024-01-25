@@ -1,3 +1,9 @@
+# import sys
+# # sys.setdefaultencoding() does not exist, here!
+# from importlib import reload
+# reload(sys)  # Reload does the trick!
+# sys.setdefaultencoding('UTF8')
+
 import pdfkit
 from urllib.parse import urlparse
 import xml.etree.ElementTree as ET
@@ -19,7 +25,8 @@ from PyPDF2 import PdfFileMerger, PdfFileReader
 import contextlib
 
 PATH_TO_SITEMAP = "resources/composing_programs_sitemap.xml"
-FIREFOX_BINARY = "/usr/bin/firefox"
+# FIREFOX_BINARY = "/usr/bin/firefox"
+FIREFOX_BINARY = 'C:\\Program Files\\Mozilla Firefox\\firefox.exe'
 PDFKIT_OPTS = options = {
     "page-size": "letter",
     "user-style-sheet": "./resources/cp.css",
@@ -32,6 +39,7 @@ PDFKIT_OPTS = options = {
     "margin-left": "0.75in",
     "no-outline": None,
     "disable-smart-shrinking": "",
+    "enable-local-file-access": ""
 }
 
 
@@ -41,7 +49,7 @@ def parse_args() -> argparse.Namespace:
     ## parse CLI args
     parser = argparse.ArgumentParser(
         prog="composing_programs_to_pdf.py",
-        description="Convert the online book 'Composing Programs' into a pdf file. See: https://composingprograms.com/",
+        description="Convert the online book 'Composing Programs' into a pdf file. See: https://www.composingprograms.com/",
     )
 
     parser.add_argument(
@@ -82,7 +90,7 @@ def _filter_chapters(ignore_v1: bool = True) -> list:
 
 
 def _fetch_chapter_number(
-    url: str = "https://composingprograms.com/pages/11-getting-started.html",
+    url: str = "https://www.composingprograms.com/pages/11-getting-started.html",
 ) -> int:
     # fetch the chapter number
     parsed = urlparse(url).path.split("/")[-1]
@@ -106,7 +114,7 @@ def _replace_img_paths(soup: BeautifulSoup, webelement: element.Tag) -> element.
         if img_tag.has_attr("src"):
             new_img = soup.new_tag(
                 "img",
-                src=f'https://composingprograms.com/img/{img_tag["src"].split("/")[-1]}',
+                src=f'https://www.composingprograms.com/img/{img_tag["src"].split("/")[-1]}',
             )
             img_tag.replace_with(new_img)
     return webelement
@@ -120,7 +128,7 @@ def _replace_href_paths(soup: BeautifulSoup, webelement: element.Tag) -> element
             if "../" in a_tag["href"]:
                 new_a = soup.new_tag(
                     "a",
-                    href=f'https://composingprograms.com/{a_tag["href"].split("/")[-1]}',
+                    href=f'https://www.composingprograms.com/{a_tag["href"].split("/")[-1]}',
                 )
                 if a_tag.string:
                     new_a.string = a_tag.string
@@ -158,6 +166,8 @@ def _create_webdriver() -> webdriver.Firefox:
     options.add_argument("-headless")
     options.add_argument("--start-maximized")
     options.add_argument("--disable-gpu")
+    options.binary_location = 'C:\\Program Files\\Mozilla Firefox\\firefox.exe'
+    # options.add_argument(f'--proxy-server=http://127.0.0.1:20719')
     return webdriver.Firefox(options=options, service_log_path=os.devnull)
 
 
@@ -177,6 +187,10 @@ def _selenium_get_source_code(
     url: str, driver: Optional[webdriver.Firefox] = None, sleep: int = 10
 ) -> str:
     current_driver = driver or _create_webdriver()
+    print(url)
+    if 'www' not in url:
+        url = url.replace('composingprograms', 'www.composingprograms')
+    print(url)
     current_driver.get(url)
     time.sleep(sleep)
     page_source = current_driver.page_source
@@ -196,7 +210,7 @@ def scrape_chapter_content(
     soup = BeautifulSoup(page_source, "html.parser")
     inner_content = soup.select(".inner-content")[0]
     inner_content = fix_links(soup=soup, webelement=inner_content)
-    with codecs.open("resources/header.html") as f:
+    with codecs.open("resources/header.html", encoding='utf8') as f:
         header_content = f.read()
     footer = """
     </body>
