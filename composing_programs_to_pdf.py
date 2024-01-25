@@ -167,7 +167,6 @@ def _create_webdriver() -> webdriver.Firefox:
     options.add_argument("--start-maximized")
     options.add_argument("--disable-gpu")
     options.binary_location = 'C:\\Program Files\\Mozilla Firefox\\firefox.exe'
-    # options.add_argument(f'--proxy-server=http://127.0.0.1:20719')
     return webdriver.Firefox(options=options, service_log_path=os.devnull)
 
 
